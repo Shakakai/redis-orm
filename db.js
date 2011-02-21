@@ -1,4 +1,5 @@
 var redis = require('./node-redis/index.js');
+var chain = require('./chain');
 
 var client = null;
 
@@ -36,6 +37,12 @@ var Query = function(modelType){
         var property = modelType.fields[filterType];
         if(filterType.indexOf("!") != -1){
             // select for not - then exclude "not items" from all results
+        }
+        else if(filterType.indexOf('>') != -1){
+            // select for great than
+        }
+        else if(filterType.indexOf('<') != -1){
+            // select for less than
         }else{
             if(property.data_type() == 'string'){
                 _query_set = modelType._get_property_set(filterType, value);

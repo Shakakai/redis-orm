@@ -64,15 +64,23 @@ function run_next_test(){
 ********/
 
 var User = db.Model('User', {
-    'username' : db.StringProperty({
-        'sortable' : true,
-        'filterable' : true,
-        'required' : true
+    username : db.StringProperty({
+        sortable : true,
+        filterable : true,
+        required : true,
+        default : 'johnny test'
     }),
-    'password' : db.StringProperty({
-        'sortable' : false,
-        'filterable' : true,
-        'required' : true
+    password : db.StringProperty({
+        sortable : false,
+        filterable : true,
+        required : true,
+        default : 'testtest'
+    }),
+    created_on : db.DateProperty({
+        sortable: true,
+        filterable: true,
+        required: true,
+        default : new Date()
     })
 });
 
@@ -154,6 +162,7 @@ tests.filter_all = function(){
         chris.password('secret');
         chris.save(this.next);
     }).next(function(err){
+        assert.equal(true,!err, "Error in filter_all call");
         todd = new User();
         todd.username('todd');
         todd.password('test test');
@@ -165,6 +174,35 @@ tests.filter_all = function(){
             assert.equal(results.length, 1, "Should have found 1 user, instead > " + results.length);
             assert.equal(results[0].username(), andrew.username(), "Username is not correct in filter_all call");
             assert.equal(results[0].password(), andrew.password(), "Password is not correct in filter_all call");
+            cleanup();
+        });
+    }).execute();
+};
+
+// currently failing - will fix this soon
+tests.numeric_filter = function(){
+    var andrew, todd, chris;
+    chain(function(){
+        andrew = new User();
+        andrew.created_on(new Date(1));
+        andrew.save(this.next);
+    }).next(function(err){
+        assert.equal(true,!err, "Error in numeric_filter call");
+        chris = new User();
+        chris.created_on(new Date(2));
+        chris.save(this.next);
+    }).next(function(err){
+        assert.equal(true,!err, "Error in numeric_filter call");
+        todd = new User();
+        todd.created_on(new Date(3));
+        todd.save(this.next);
+    }).next(function(err){
+        assert.equal(true,!err, "Error in numeric_filter call");
+        User.all().filter('created_on >', new Date(1)).orderby('created_on', 'DESC').fetch(10, function(err, results){
+            assert.equal(true,!err, "Error in numeric_filter call");
+            assert.equal(results.length, 2, "Should have found 1 user, instead > " + results.length);
+            assert.equal(results[0].created_on(), chris.created_on(), "created_on is not correct in numeric_filter call");
+            assert.equal(results[1].created_on(), todd.created_on(), "created_on is not correct in numeric_filter call");
             cleanup();
         });
     }).execute();
