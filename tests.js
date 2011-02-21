@@ -160,7 +160,7 @@ tests.filter_all = function(){
         todd.save(this.next);
     }).next(function(err){
         assert.equal(true,!err, "Error in filter_all call");
-        User.all().filter('username', 'andrew').filter('password', 'god').orderby('username', 'DESC').fetch(10, function(err, results){
+        User.all().filter('username', 'andrew').orderby('username', 'DESC').fetch(10, function(err, results){
             assert.equal(true,!err, "Error in filter_all call");
             assert.equal(results.length, 1, "Should have found 1 user, instead > " + results.length);
             assert.equal(results[0].username(), andrew.username(), "Username is not correct in filter_all call");

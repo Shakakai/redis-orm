@@ -146,6 +146,9 @@ var Model = exports.Model = function(name, fields, actions){
         if(arguments.length > 0){
             this._id = id;
             this._new = false;
+            if(!properties){
+                throw new Error("Existing objects instatiated with an id must include a property array.");
+            }
             this.process_db_model(properties);
         }else{
             this._id = result._get_id_prefix() + guid();
@@ -156,14 +159,8 @@ var Model = exports.Model = function(name, fields, actions){
         }
     };
     
-    result.prototype.set_original = function(prop, value){
-        this._original[prop] = value;
-    };
-    result.prototype.set_source = function(prop, value){
-        this._source[prop] = value;
-    };
-    
     result.prototype.process_db_model = function(objs){
+        console.log("objs", objs);
         for(var prop in fields){
             var raw_value = objs.shift();
             this._original[prop] = raw_value;
@@ -171,29 +168,17 @@ var Model = exports.Model = function(name, fields, actions){
             console.log(prop, "RAW", raw_value, "FINAL", final_value);
             this._source[prop] = final_value;
         }
-        //console.log("INSTANCE CHECK", this.title(), this.content(), this.created_on());
     };
     
     // closure to create getter-setters
     var create_getter_setter = function(prop){
         return function(){
             if(arguments.length == 1){//setter
-                //console.log("SETTER");
                 this._source[prop] = arguments[0];
             }else{//getter
-                //console.log("GETTER", prop, this._source[prop])
                 return this._source[prop];
             }
         };
-    };
-    //convert key value array to object hash
-    var kvarray_to_object = function(kv_array){
-        var len = kv_array.length/2;
-        var temp_obj = {};
-        while(len--){
-            temp_obj[kv_array[len*2-1]] = kv_array[len*2];
-        }
-        return temp_obj;
     };
     
     /**
@@ -205,14 +190,11 @@ var Model = exports.Model = function(name, fields, actions){
     
     // pass redis values into instance variables
     result.objectify = function(key, data_array){
-        var a = new result(key);
-        var temp_obj = kvarray_to_object(data_array);
-        a._original = temp_obj;
-        for(var prop in fields){
-            if(temp_obj[prop]){
-                a._source[prop] = fields[prop].to_object(temp_obj[prop]);
-            }
+        var props = [];
+        for(var field in fields){
+            props.push(data_array[field]);
         }
+        var a = new result(key, props);
         return a;
     };
     // convert to hashmap array for redis client
@@ -342,6 +324,7 @@ var Model = exports.Model = function(name, fields, actions){
                             if(fields[prop].is_filterable()){
                                 has_filterable = true;
                                 hold_count++;
+                                console.log("add filter attr", prop);
                                 client.sadd(result._get_property_set(prop, redis_hash[prop]), id, function(err){
                                     hold_count--;
                                     if(ready && hold_count == 0){
@@ -350,6 +333,7 @@ var Model = exports.Model = function(name, fields, actions){
                                 });
                             }
                         }
+                        console.log("after adding filter attrs");
                         ready = true;
                         if(!has_filterable){
                             callback(err);
