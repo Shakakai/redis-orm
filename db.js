@@ -1,5 +1,5 @@
 var redis = require('./node-redis/index.js');
-var chain = require('./chain');
+var chain = require('./chain').chain;
 
 var client = null;
 
@@ -232,10 +232,9 @@ var Model = exports.Model = function(name, fields, actions){
     };
     // delete a single object from redis
     result.delete = function(obj, callback){
-        client.del(obj._id, function(err){
-            if(!err) return callback(err);
-            client.srem(result._get_hashname(), obj._id, callback);
-        });
+        client.multi()
+              .del(obj._id).srem(result._get_hashname(), obj._id)
+              .exec(callback);
     }
     // delete all objects from redis
     result.deleteAll = function(callback){
@@ -268,6 +267,9 @@ var Model = exports.Model = function(name, fields, actions){
     result._get_property_set = function(prop, value){
         return result._get_property_prefix() + ":" + prop + ":" + value;
     };
+    result._get_property_sort = function(prop){
+        return result._get_property_prefix() + ":" + prop;
+    }
     
     /**
     * Instance methods 
@@ -307,72 +309,54 @@ var Model = exports.Model = function(name, fields, actions){
             return;
         }
         
+        var rollback = function(){
+            client.discard();
+        };
+        
         console.log('set model');
         var orig_hash = this._original;
         var redis_hash = result.to_redis_hash(this);
         var id = this._id;
         var is_new = this._new;
-        console.log('REDIS HASH', redis_hash);
-        client.hmset(id, redis_hash, function(err){
-            if(!err){
-                //add to master class hash
-                console.log("BEFORE NEW >>", is_new);
-                if(is_new){
-                    console.log('add model to hash >> ' + result._model_name + ' - ' + id);
-                    client.sadd(result._get_hashname(), id, function(err){
-                        if(err){
-                            console.log("Error hashing new object >> " + err);
-                        }
-                        // Create filter lookups
-                        var ready = false;
-                        var hold_count = 0;
-                        var has_filterable = false;
-                        for(var prop in fields){
-                            if(fields[prop].is_filterable()){
-                                has_filterable = true;
-                                hold_count++;
-                                console.log("add filter attr", prop);
-                                client.sadd(result._get_property_set(prop, redis_hash[prop]), id, function(err){
-                                    hold_count--;
-                                    if(ready && hold_count == 0){
-                                        callback(err);
-                                    }
-                                });
-                            }
-                        }
-                        console.log("after adding filter attrs");
-                        ready = true;
-                        if(!has_filterable){
-                            callback(err);
-                        }
-                    });
-                }else{
-                    var ready = false;
-                    var hold_count = 0;
-                    for(var prop in fields){
-                        // Value changed - Update hashes
-                        if(fields[prop].is_filterable() && orig_hash[prop] != redis_hash[prop]){
-                            hold_count++;
-                            client.sadd(result._get_property_set(prop, redis_hash[prop]), id, function(err){
-                                if(err) return;
-                                client.srem(result._get_property_set(prop, orig_hash[prop]), id, function(err){
-                                    if(err) return;
-                                    hold_count--;
-                                    if(ready && hold_count == 0){
-                                        callback(err);
-                                    }
-                                });
-                            });
-                        }
-                    }
-                    ready = true;
+        
+        // MULTI VERSION
+        var multi = client.multi();
+        multi.hmset(id, redis_hash);
+        
+        //add to master class hash
+        console.log("BEFORE NEW >>", is_new);
+        if(is_new){
+            console.log('add model to hash >> ' + result._model_name + ' - ' + id);
+            multi.sadd(result._get_hashname(), id);
+            for(var prop in fields){
+                if(fields[prop].is_filterable()){
+                    multi.sadd(result._get_property_set(prop, redis_hash[prop]), id);
                 }
-            }else{
-                console.log("Error saving object >> ", err);
-                callback(err);
+                if(fields[prop].is_sortable()){
+                    multi.zadd(result._get_property_sort(prop), redis_hash[prop], id);
+                }
             }
+        }else{
+            for(var prop in fields){
+                // Value changed - Update hashes
+                if( orig_hash[prop] != redis_hash[prop] ){
+                    if(fields[prop].is_filterable()){
+                        multi.sadd(result._get_property_set(prop, redis_hash[prop]), id);
+                        multi.srem(result._get_property_set(prop, orig_hash[prop]), id);
+                    }
+                    if(fields[prop].is_sortable()){
+                        multi.zrem(result._get_property_sort(prop), redis_hash[prop]);
+                        multi.zadd(result._get_property_sort(prop), redis_hash[prop], id);
+                    }
+                }
+            }
+        }
+        
+        multi.exec(function(err){
+            callback(err);
         });
-    }
+    };
+    
     // delete instance from redis
     result.prototype.delete = function(callback){
         result.delete(this, callback);
@@ -380,7 +364,7 @@ var Model = exports.Model = function(name, fields, actions){
     
     result.prototype._get_property_hashname = function(propname){
         return "prophash:" + propname +":" + this._id;
-    }
+    };
     
     return result;
 };
